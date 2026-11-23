@@ -13,4 +13,3 @@ def test_wrong_feature_count_fails(features):
 def test_non_finite_features_fail(bad_value):
     with pytest.raises(ValueError, match="finite"):
         preprocess_features([1, 2, 3, 4, bad_value])
-        
