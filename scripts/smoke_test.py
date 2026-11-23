@@ -36,4 +36,3 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         raise SystemExit("Usage: python scripts/smoke_test.py https://staging.example.com")
     main(sys.argv[1])
-  
