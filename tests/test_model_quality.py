@@ -7,3 +7,4 @@ def test_evaluation_metrics_meet_gate():
     assert 0 <= metrics["precision"] <= 1
     assert 0 <= metrics["recall"] <= 1
     assert 0 <= metrics["roc_auc"] <= 1
+    

@@ -22,3 +22,4 @@ def test_invalid_api_input_fails():
     with TestClient(app) as client:
         response = client.post("/predict", json={"features": [1, 2]})
         assert response.status_code == 422
+        
