@@ -95,7 +95,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
-          cache: 'false'
+          trivyignores: .trivyignore
       - name: Export the scanned image
         run: docker save "ml-app:${GITHUB_SHA}" -o image.tar
       - name: Upload scanned image artifact
