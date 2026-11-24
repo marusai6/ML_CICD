@@ -11,7 +11,7 @@ def main():
     parser.add_argument("--output", default="data/demo.csv")
     args = parser.parse_args()
     X, y = make_classification(
-        n_samples=1800, n_features=5, n_informative=4, n_redundant=1,
+        n_samples=450, n_features=5, n_informative=4, n_redundant=1,
         n_classes=2, weights=[0.65, 0.35], class_sep=1.5, random_state=17,
     )
     frame = pd.DataFrame(X, columns=FEATURES)
