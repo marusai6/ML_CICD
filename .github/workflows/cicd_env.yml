@@ -133,11 +133,17 @@ jobs:
           docker tag "ml-app:${GITHUB_SHA}" "$IMAGE_NAME:sha-${GITHUB_SHA}"
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push "$IMAGE_NAME:sha-${GITHUB_SHA}"
-          DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:sha-${GITHUB_SHA}")"
-          if [[ -z "$DIGEST" || "$DIGEST" != *@sha256:* ]]; then
-            echo "Could not obtain immutable image digest" >&2
+          IMAGE_WITH_TAG="$IMAGE_NAME:sha-${GITHUB_SHA}"
+          DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_WITH_TAG")"
+          if [ -z "$DIGEST" ]; then
+             DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_WITH_TAG" 2>/dev/null || true)
+          fi
+
+          if [[ -z "$DIGEST" || "$DIGEST" != *"@sha256:"* ]]; then
+            echo "::error::Could not obtain immutable image digest for $IMAGE_WITH_TAG"
             exit 1
           fi
+          
           echo "image_ref=$DIGEST" >> "$GITHUB_OUTPUT"
           echo "Published immutable image: $DIGEST"
           echo "Source commit: $GITHUB_SHA"
