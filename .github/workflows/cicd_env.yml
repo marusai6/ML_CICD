@@ -149,84 +149,62 @@ jobs:
           echo "Source commit: $GITHUB_SHA"
 
   deploy-test:
-    name: CD / ephemeral staging and smoke tests
+    name: CD / deploy to test environment
     runs-on: ubuntu-latest
     needs: publish
-
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    permissions:
-      contents: read
-      packages: read
-
+    environment: test
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Login to GitHub Container Registry
+      - name: Validate deployment configuration
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_USER: ${{ github.actor }}
-        run: |
-          echo "$GH_TOKEN" | docker login ghcr.io \
-            -u "$GH_USER" \
-            --password-stdin
-
-      - name: Pull published immutable image
-        env:
-          IMAGE_REF: ${{ needs.publish.outputs.image_ref }}
-        run: |
-          set -euo pipefail
-          test -n "$IMAGE_REF"
-          docker pull "$IMAGE_REF"
-
-      - name: Start test container
-        env:
-          IMAGE_REF: ${{ needs.publish.outputs.image_ref }}
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          docker run -d \
-            --name ml-api-test \
-            -p 127.0.0.1:8000:8000 \
-            -e MODEL_VERSION="sha-${COMMIT_SHA}" \
-            "$IMAGE_REF"
-
-      - name: Wait for readiness
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-
-          READY=0
-
-          for i in $(seq 1 30); do
-            if curl --fail --silent \
-              http://127.0.0.1:8000/ready \
-              > /dev/null; then
-              READY=1
-              break
+          for name in STAGING_HOST STAGING_USER STAGING_SSH_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required secret: $name"
+              exit 1
             fi
-
-            sleep 2
           done
-
-          if [ "$READY" -ne 1 ]; then
-            echo "::error::Service did not become ready"
-            exit 1
-          fi
-
-      - name: Run smoke tests
+          echo "SSH configuration is present"
+      - name: Test SSH connection
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: 22
+          script: |
+            whoami
+            hostname
+            docker --version
+      - name: Deploy exact published digest over SSH
+        uses: appleboy/ssh-action@v1.2.0
         env:
-          BASE_URL: http://127.0.0.1:8000
-        run: |
-          set -euo pipefail
-          python scripts/smoke_test.py "$BASE_URL"
+          IMAGE_REF: ${{ needs.publish.outputs.image_ref }}
+          MODEL_VERSION: sha-${{ github.sha }}
+          GHCR_USER: ${{ secrets.STAGING_GHCR_USER }}
+          GHCR_TOKEN: ${{ secrets.STAGING_GHCR_TOKEN }}
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          envs: IMAGE_REF,MODEL_VERSION,GHCR_USER,GHCR_TOKEN
+          script: |
+            set -eu
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker pull "$IMAGE_REF"
+            docker rm -f ml-api-staging >/dev/null 2>&1 || true
+            docker run -d --name ml-api-staging --restart unless-stopped \
+              -p 8000:8000 -e MODEL_VERSION="$MODEL_VERSION" "$IMAGE_REF"
+            echo "Deployed: $IMAGE_REF"
 
-      - name: Show container logs on failure
-        if: failure()
-        run: |
-          docker logs ml-api-test || true
-
-      - name: Stop and remove test container
-        if: always()
-        run: |
-          docker rm -f ml-api-test || true
+  smoke-test:
+    name: CD / staging smoke tests
+    runs-on: ubuntu-latest
+    needs: deploy-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    run: python scripts/smoke_test.py https://staging.example.com
